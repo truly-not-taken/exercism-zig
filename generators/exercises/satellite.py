@@ -1,6 +1,7 @@
 from lib import is_error
 
 HEADER = """const Tree = satellite.Tree;
+const Node = satellite.Node;
 const Result = (std.mem.Allocator.Error || satellite.TraversalError)!Tree;
 
 fn expectEqualChars(expected: u8, actual: u8) !void {
@@ -11,6 +12,16 @@ fn expectEqualChars(expected: u8, actual: u8) !void {
             fmtChar(actual),
         });
         return error.TestExpectedEqual;
+    }
+}
+
+fn expectNull(actual: ?*Node) !void {
+    const fmtChar = std.zig.fmtChar;
+    if (actual) |a| {
+        testing.failPrint("expected null, found node '{f}'\\n", .{
+            fmtChar(a.data),
+        });
+        return error.TestExpectedNull;
     }
 }
 """
@@ -28,7 +39,7 @@ def _u8_const_slice(name, chars):
 
 def _traverse(expr, node, out):
     if not node:
-        out.append(f"try testing.expectEqual(null, {expr});\n")
+        out.append(f"try expectNull({expr});\n")
         return
     out.append(f"try testing.expect({expr} != null);\n")
     out.append(f"try expectEqualChars('{node['v']}', {expr}.?.data);\n")
@@ -44,19 +55,18 @@ def gen_case(case):
     out = [_u8_const_slice("preorder", preorder), _u8_const_slice("inorder", inorder)]
 
     if is_error(expected):
-        out.append("""const actual: Result = .initFromTraversals(
+        out.append("""var actual: Result = .initFromTraversals(
             testing.allocator, preorder, inorder,);
-            defer if (actual) |a| a.deinit() else |_| {};
+            defer if (actual) |*a| a.deinit() else |_| {};
             """)
         err = _ERROR_MAP[expected["error"]]
         out.append(f"try testing.expectError(error.{err}, actual);\n")
         return "".join(out)
 
-    out.append("""const actual: Tree = try .initFromTraversals(
+    out.append("""var actual: Tree = try .initFromTraversals(
         testing.allocator, preorder, inorder,);
         defer actual.deinit();
-        const root = actual.root;
         """)
-    _traverse("root", expected, out)
+    _traverse("actual.root", expected, out)
 
     return "".join(out)
